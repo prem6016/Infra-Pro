@@ -7,10 +7,6 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = var.region
-}
-
 # Optionally find latest Amazon Linux 2 AMI if user did not set ami_id
 data "aws_ami" "amazon_linux_2" {
   count = var.ami_id == "" ? 1 : 0
@@ -39,24 +35,24 @@ resource "aws_key_pair" "dev_key" {
 # Networking
 resource "aws_vpc" "dev_vpc" {
   cidr_block = "10.0.0.0/16"
-  tags = { Name = "${var.instance_name}-vpc" }
+  tags       = { Name = "${var.instance_name}-vpc" }
 }
 
 resource "aws_subnet" "dev_subnet" {
-  vpc_id                   = aws_vpc.dev_vpc.id
-  cidr_block               = "10.0.1.0/24"
-  map_public_ip_on_launch  = true
-  tags = { Name = "${var.instance_name}-subnet" }
+  vpc_id                  = aws_vpc.dev_vpc.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+  tags                    = { Name = "${var.instance_name}-subnet" }
 }
 
 resource "aws_internet_gateway" "dev_gw" {
   vpc_id = aws_vpc.dev_vpc.id
-  tags = { Name = "${var.instance_name}-igw" }
+  tags   = { Name = "${var.instance_name}-igw" }
 }
 
 resource "aws_route_table" "dev_rt" {
   vpc_id = aws_vpc.dev_vpc.id
-  tags = { Name = "${var.instance_name}-rt" }
+  tags   = { Name = "${var.instance_name}-rt" }
 }
 
 resource "aws_route" "internet_route" {
@@ -97,15 +93,15 @@ resource "aws_security_group" "dev_sg" {
 
 # EC2 instance
 resource "aws_instance" "dev_vm" {
-  ami                    = var.ami_id != "" ? var.ami_id : data.aws_ami.amazon_linux_2[0].id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.dev_subnet.id
+  ami                         = var.ami_id != "" ? var.ami_id : data.aws_ami.amazon_linux_2[0].id
+  instance_type               = var.instance_type
+  subnet_id                   = aws_subnet.dev_subnet.id
   associate_public_ip_address = true
-  key_name               = aws_key_pair.dev_key.key_name
-  vpc_security_group_ids = [aws_security_group.dev_sg.id]
+  key_name                    = aws_key_pair.dev_key.key_name
+  vpc_security_group_ids      = [aws_security_group.dev_sg.id]
 
   tags = {
-    Name = var.instance_name
+    Name        = var.instance_name
     Environment = "dev"
     ManagedBy   = "terraform"
   }

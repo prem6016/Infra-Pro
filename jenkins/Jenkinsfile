@@ -20,13 +20,12 @@ pipeline {
 
     stage('Prepare AWS creds') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'aws-creds',
-                                          usernameVariable: 'AWS_ACCESS_KEY_ID',
-                                          passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+        withCredentials([[
+            $class: 'AmazonWebServicesCredentialsBinding',
+            credentialsId: 'aws-creds'
+        ]]) {
           sh '''
-            export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-            export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-            echo "AWS env vars set for this shell"
+            aws sts get-caller-identity
           '''
         }
       }

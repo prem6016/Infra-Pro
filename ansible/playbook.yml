@@ -1,0 +1,17 @@
+- hosts: all
+  become: true
+
+  tasks:
+    - name: Install basic developer tools
+      yum:
+        name:
+          - git
+          - docker
+          - python3
+        state: present
+
+    - name: Enable Docker
+      service:
+        name: docker
+        state: started
+        enabled: true

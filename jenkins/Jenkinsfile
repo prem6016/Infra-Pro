@@ -1,0 +1,99 @@
+pipeline {
+  agent any
+
+  parameters {
+    choice(name: 'ACTION', choices: ['apply','destroy'], description: 'Terraform action')
+    string(name: 'TF_VAR_instance_name', defaultValue: 'dev-vm', description: 'Instance Name tag')
+  }
+
+  environment {
+    TF_DIR = 'terraform'
+    ANSIBLE_DIR = 'ansible'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Prepare AWS creds') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'aws-creds',
+                                          usernameVariable: 'AWS_ACCESS_KEY_ID',
+                                          passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+          sh '''
+            export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            echo "AWS env vars set for this shell"
+          '''
+        }
+      }
+    }
+
+    stage('Terraform Init & Plan') {
+      steps {
+        dir("${TF_DIR}") {
+          sh 'terraform init -input=false'
+          sh "terraform plan -var=\"instance_name=${TF_VAR_instance_name}\" -out=tfplan -input=false"
+        }
+      }
+    }
+
+    stage('Terraform Apply/Destroy') {
+      steps {
+        dir("${TF_DIR}") {
+          script {
+            if (params.ACTION == 'apply') {
+              sh 'terraform apply -input=false -auto-approve tfplan'
+            } else {
+              sh "terraform destroy -auto-approve -var=\"instance_name=${TF_VAR_instance_name}\""
+            }
+          }
+        }
+      }
+    }
+
+    stage('Fetch outputs and run Ansible') {
+      when { expression { return params.ACTION == 'apply' } }
+      steps {
+        dir("${TF_DIR}") {
+          // produce json outputs in workspace root
+          sh 'terraform output -json > ${WORKSPACE}/.tf_outputs.json'
+        }
+
+        // Bind the SSH private key credential — this provides a temp file path SSH_KEY_FILE_CRED and SSH_USER
+        withCredentials([sshUserPrivateKey(credentialsId: 'dev-ssh-key',
+                                           keyFileVariable: 'SSH_KEY_FILE_CRED',
+                                           usernameVariable: 'SSH_USER')]) {
+          // create inventory and run ansible inside the credential scope
+          script {
+            def outputs = readJSON file: "${WORKSPACE}/.tf_outputs.json"
+            def pubip = outputs.public_ip.value
+            echo "Provisioned VM public IP: ${pubip}"
+
+            // Write inventory file. Use the temp key file path provided by Jenkins.
+            writeFile file: "${WORKSPACE}/${ANSIBLE_DIR}/inventory", text: "[dev]\n${pubip} ansible_user=${SSH_USER} ansible_private_key_file=${SSH_KEY_FILE_CRED}\n"
+          }
+
+          // Run ansible-playbook (disable host key checking for convenience)
+          sh """
+            ANSIBLE_HOST_KEY_CHECKING=False \
+            ansible-playbook -i ${ANSIBLE_DIR}/inventory ${ANSIBLE_DIR}/playbook.yml --ssh-extra-args='-o StrictHostKeyChecking=no'
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      echo "Pipeline finished; cleaning workspace sensitive files"
+      sh 'rm -f ${WORKSPACE}/.tf_outputs.json || true'
+      // Do NOT rm JVM-provided SSH credential temp file — Jenkins manages it
+    }
+    success { echo "Pipeline succeeded." }
+    failure { echo "Pipeline failed; inspect console logs." }
+  }
+}

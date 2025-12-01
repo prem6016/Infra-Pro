@@ -2,13 +2,14 @@
   become: true
 
   tasks:
-    - name: Install basic developer tools
-      yum:
+    - name: Install basic developer tools (Ubuntu)
+      apt:
         name:
           - git
-          - docker
+          - docker.io
           - python3
         state: present
+        update_cache: yes
 
     - name: Enable Docker
       service:
